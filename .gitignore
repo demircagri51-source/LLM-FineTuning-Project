@@ -1,0 +1,14 @@
+CodeGen/models/ 
+CodeGen/results/ 
+__pycache__/ 
+*.pyc 
+.env 
+venv/ 
+qwen*/ 
+checkpoint-*/ 
+CodeGen/models/ 
+CodeGen/results/ 
+__pycache__/ 
+*.pyc 
+venv/ 
+.env 
