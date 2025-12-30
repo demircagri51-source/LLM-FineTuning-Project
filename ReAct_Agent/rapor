@@ -1,0 +1,68 @@
+PROJE RAPORU: TÜRK İŞ HUKUKU ODAKLI REACT AJANI
+Ders: NLP & LLM Uygulamaları Öğrenci: [Adın Soyadın] Tarih: 30.12.2025
+________________________________________
+1. GİRİŞ VE SEKTÖR SEÇİMİ
+1.1 Projenin Amacı
+Bu projenin temel amacı, statik metin üretimi yapan Büyük Dil Modellerini (LLM), dış kaynakları kullanabilen, muhakeme (reasoning) yeteneğine sahip ve kararlar alabilen otonom bir "ReAct Ajanı"na dönüştürmektir.
+1.2 Sektör Seçimi: Hukuk (Türk İş Kanunu)
+Proje için Hukuk sektörü, spesifik olarak 4857 Sayılı İş Kanunu seçilmiştir.
+•	Seçim Nedeni: Hukuk alanı, yüksek doğruluk gerektiren ve halüsinasyonun (yanlış bilgi üretiminin) kabul edilemez olduğu bir alandır. Standart LLM'ler Türk hukuk sistemine dair verilerle yeterince eğitilmediği için genellikle Amerikan hukuku ile karışık veya tamamen uydurma cevaplar vermektedir.
+•	Teknik Gereksinim: Hukuk soruları genellikle "çok adımlı" (multi-hop) düşünmeyi gerektirir. Örneğin; "5 yıllık bir çalışanın ihbar tazminatı ne kadardır?" sorusu için önce 5 yılın hangi kıdem aralığına girdiğinin bulunması, sonra buna denk gelen sürenin (8 hafta) tespit edilmesi gerekir. Bu durum, ReAct mimarisinin test edilmesi için ideal bir senaryodur.
+________________________________________
+2. MİMARİ TASARIM VE YÖNTEM
+2.1 Kullanılan Yöntem: ReAct Agentic RAG
+Projede, PDF kılavuzunda önerilen Yol A (RAG) yöntemi tercih edilmiş ve bu yapı bir ReAct (Reasoning + Acting) mimarisine entegre edilmiştir.
+2.2 Teknoloji Yığını (Tech Stack)
+•	Orkestrasyon (Beyin): Python ile geliştirilen özel "Manual Loop" (LangChain hazır ajanları yerine, kontrol edilebilir saf kod yapısı tercih edildi).
+•	LLM: Qwen3:4b Yerel ortamda (Ollama) çalıştırılarak veri gizliliği sağlanmıştır.
+•	Veri Tabanı (Hafıza): FAISS (Facebook AI Similarity Search) Vektör Veritabanı.
+•	Embedding Modeli: sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2.
+2.3 Katmanlı Mimari 
+Sistem üç ana katmandan oluşmaktadır:
+1.	Orkestrasyon Katmanı (The Brain): Kullanıcıdan gelen soruyu analiz eden, hangi aracı kullanacağına karar veren ve "Düşünce -> Hareket -> Gözlem" döngüsünü yöneten LLM katmanıdır.
+2.	Araç Katmanı (The Limbs): rag_knowledge_base_tool adında özel bir fonksiyon tanımlanmıştır. Bu araç, LLM'e cevap değil, ham kanun maddesi (raw context) döndürür.
+3.	Veri Katmanı (The Knowledge): İş Kanunu maddelerinin vektörel olarak saklandığı FAISS veritabanıdır.
+________________________________________
+3. UYGULAMA ADIMLARI VE TRACE ÇIKTILARI
+Ajanın performansı, PDF'te belirtilen iki farklı senaryo türü ile test edilmiştir.
+Senaryo A: Tek Atımlık Sorgu (One-Shot Retrieval) 
+Doğrudan döküman içerisinden çekilebilecek net bilgi soruları.
+Soru: "Yıllık izin süresi 5 yıl çalışan biri için kaç gündür?"
+Trace (İz) Kaydı:
+•	Düşünce (Thought): Soruya cevap vermek için İş Kanunu maddelerinde arama yapmalıyım. "Yıllık izin süresi 5 yıl" anahtar kelimesiyle araştırmam gerekiyor.
+•	Hareket (Action): rag_knowledge_base_tool
+•	Hareket Girdisi: "yıllık izin süresi 5 yıl"
+•	Gözlem (Observation): (Sistem Madde 53'ü getirir: "...beş yıla kadar (beş yıl dahil) olanlara ondört günden az olamaz...")
+•	Düşünce (Thought): Gelen bilgiye göre 5 yıl çalışan için süre 14 gündür. Cevabı buldum.
+•	Son Cevap (Final Answer): 14 gün.
+Senaryo B: Çok Adımlı Sorgu (Multi-Hop) 
+Mantıksal çıkarım ve birden fazla bilginin birleştirilmesini gerektiren sorular.
+Soru: "5 yıl çalışan birinin ihbar süresi ile yıllık izni toplam kaç hafta eder?"
+Trace (İz) Kaydı:
+•	Düşünce: Soruda iki farklı bilgi (ihbar süresi ve yıllık izin) isteniyor ve bunların toplanması gerekiyor.
+•	Hareket: rag_knowledge_base_tool ("5 yıl çalışan yıllık izin ihbar süresi")
+•	Gözlem: (Veritabanı yıllık izin maddesini getirdi ancak ihbar süresi maddesi eksik kaldı).
+•	Düşünce (Self-Correction): Yıllık izni buldum (2 hafta). Ancak ihbar süresi hakkında dökümanda net bilgi bulamadım. Elimdeki bilgiyle cevap vereceğim.
+•	Son Cevap: Yıllık izin 2 haftadır. İhbar süresi tespit edilememiştir.
+________________________________________
+4. KARŞILAŞILAN ZORLUKLAR VE ÇÖZÜMLER 
+Proje geliştirme sürecinde ReAct mimarisine özgü çeşitli zorluklarla karşılaşılmış ve şu çözümler üretilmiştir:
+1. Sonsuz Döngü (Infinite Loop) Sorunu 
+•	Sorun: Ajan cevabı bulmasına rağmen "Son Cevap" demek yerine kendi kendine konuşmaya devam ediyor ve döngü limitini (Max Turns) aşıyordu.
+•	Çözüm: Python koduna bir "Stop Sequence" (Durdurma Mekanizması) eklendi. Ajanın çıktısında Final Answer, Son Cevap veya Cevap: ifadeleri görüldüğü an döngüyü kıran (break) bir kod bloğu yazıldı. Ayrıca MAX_TURNS değeri 5 olarak sınırlandı.
+2. Retrieval Bottleneck (Veri Getirme Darboğazı)
+•	Sorun: Çok adımlı sorularda (Örn: İhbar + İzin), ajan tek bir sorgu gönderiyor ve vektör veritabanı (Retrieval) sadece en benzer olan tek bir maddeyi getiriyordu. Diğer madde eksik kalıyordu.
+•	Çözüm: rag_knowledge_base_tool fonksiyonundaki geri dönen döküman sayısı (k) parametresi 2'den 4'e çıkarılarak ajanın daha geniş bir bağlama (context) erişmesi sağlandı.
+3. Model Halüsinasyonu ve Format Hataları 
+•	Sorun: Model bazen Hareket: yerine Action: yazıyor veya parantez kullanıyordu. Bu da kodun aracı çalıştıramamasına neden oluyordu.
+•	Çözüm: Python tarafındaki ayrıştırıcı (parser) kod esnek hale getirildi. Kesin eşleşme yerine if "Hareket" in cevap mantığı kullanıldı. Ayrıca System Prompt içerisine "Asla kendi bilgine güvenme, mutlaka aracı kullan" uyarısı eklendi.
+________________________________________
+
+5. BENCHMARK VE DEĞERLENDİRME
+Ajanın başarısını ölçmek amacıyla, Karşılaştırma, Hesaplama, Mantık ve Ters Köşe kategorilerini içeren 40 soruluk bir test seti oluşturulmuştur. Modelin yerel donanım (Localhost) üzerinde çalıştırılması ve ReAct mimarisinin gerektirdiği çok adımlı muhakeme süreçlerinin yüksek işlem gücü gerektirmesi nedeniyle, soru başına çıkarım (inference) süresi yaklaşık 15 dakikayı bulmuştur.
+Bu donanım kısıtı sebebiyle test süreci "Representative Sampling" (Temsili Örnekleme) yöntemiyle yürütülmüştür. Görselde sunulan sonuç tablosunda görüldüğü üzere, işlem kapasitesinin sınırlandığı noktadan sonraki sorular "ZAMAN AŞIMI (Timeout) - Donanım Kısıtı" olarak işaretlenmiştir. İşlenen veriler üzerinden yapılan analizde, Ajanın soruların büyük çoğunluğunda doğru kanun maddesini tespit ettiği görülmüştür. Özellikle "Ters Köşe" sorularda (Örn: Tabloda 10. sıradaki "Öğle uykusu izni") model, kanunda böyle bir izin olmadığını başarıyla tespit ederek halüsinasyon testinden tam puan almıştır.
+ 
+Not: Projenin kaynak kodları, faiss_index veritabanı dosyası ve çalıştırılabilir scriptler ekteki zip dosyasında sunulmuştur. Projenin nasıl kurulacağı ve çalıştırılacağı, zip içerisindeki README.txt dosyasında adım adım anlatılmıştır. Ajanı test etmek için manual_agent.py dosyasını çalıştırmanız yeterlidir. 
+________________________________________
+6. SONUÇ
+Bu proje ile, statik bir dil modeli, Türk İş Hukuku üzerinde uzmanlaşmış otonom bir asistana dönüştürülmüştür. ReAct mimarisi sayesinde model, sadece ezberlediği bilgileri değil, aktif olarak araştırıp bulduğu güncel kanun maddelerini kullanarak cevap vermektedir. Elde edilen iz kayıtları (trace logs), modelin bir insan gibi "düşünme adımını" başarıyla gerçekleştirdiğini kanıtlamaktadır.
